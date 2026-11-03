@@ -1,0 +1,56 @@
+# Disposable acceptance only. All credentials below are public synthetic fixtures.
+# No live env_file, named volumes, or non-loopback exposed ports.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: acceptance
+      POSTGRES_PASSWORD: disposable-acceptance-only
+      POSTGRES_DB: acceptance
+    tmpfs: [/var/lib/postgresql/data]
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U acceptance -d acceptance']
+      interval: 2s
+      timeout: 2s
+      retries: 20
+  web:
+    build:
+      context: ..
+      args:
+        BASE_PATH: ''
+    image: seopen-auth-web-acceptance
+    ports: ['127.0.0.1:9397:3000']
+    tmpfs: [/data/storage]
+    environment:
+      PORT: '3000'
+      ORIGIN: http://127.0.0.1:9397
+      DATABASE_URL: postgres://acceptance:disposable-acceptance-only@postgres:5432/acceptance
+      DB_PROVIDER: postgres
+      KV_PROVIDER: postgres
+      STORAGE_PROVIDER: filesystem
+      STORAGE_PATH: /data/storage
+      ADMIN_SEED_EMAIL: admin@acceptance.test
+      ADMIN_SEED_PASSWORD: disposable-admin-password
+      ADMIN_SESSION_SECRET: disposable-task7-session-secret
+      GAME_SERVER_INTERNAL_URL: http://game:8080
+      PUBLIC_BACKEND_URL: http://127.0.0.1:9897
+      PUBLIC_WS_URL: ws://127.0.0.1:9897
+      PUBLIC_PLAY_URL: http://127.0.0.1:9397
+      PUBLIC_DISPLAY_PLAY_URL: 127.0.0.1:9397
+      PUBLIC_SELF_HOSTED: 'true'
+      PUBLIC_CORKBOARD_URL: http://127.0.0.1:9597
+    depends_on:
+      postgres:
+        condition: service_healthy
+  game:
+    build:
+      context: ../../game-backend
+      target: fuiz-server
+    image: seopen-auth-game-acceptance
+    ports: ['127.0.0.1:9897:8080']
+    environment:
+      FUIZ_HOSTNAME: 0.0.0.0
+      FUIZ_PORT: '8080'
+      FUIZ_ALLOWED_ORIGINS: '["http://127.0.0.1:9397"]'
+      ADMIN_SESSION_SECRET: disposable-task7-session-secret
+      HOST_AUTHORIZATION_URL: http://web:3000/api/host/authorize

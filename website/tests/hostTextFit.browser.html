@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="th">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Thai+Looped:wght@100..900&display=swap');
+    body { margin: 0; font: 20px 'Noto Sans Thai Looped', sans-serif; }
+    #app {
+      --host-question-size: clamp(1.75rem, min(4.5vw, 7vh), 4.5rem);
+      --host-question-max-height: 32dvh;
+      --host-min-width: 0;
+      width: 100%;
+    }
+  </style>
+  <div id="app"></div>
+  <script type="module">
+    import { mount } from 'svelte';
+    import TextBar from '../src/lib/game/TextBar.svelte';
+
+    const short = 'ข้อใดคือ Primary Key?';
+    const long = 'ในการออกแบบระบบลงทะเบียนเรียน หากต้องการกำหนดว่ารหัสวิชาในตารางการลงทะเบียนต้องอ้างอิงถึงรหัสวิชาที่มีอยู่จริงในตารางข้อมูลวิชา ควรใช้หลักการใดเพื่อเชื่อมโยงข้อมูลให้ถูกต้อง';
+    mount(TextBar, {
+      target: document.getElementById('app'),
+      props: { text: location.search.includes('short') ? short : long, maxLines: 3 }
+    });
+  </script>
+</html>

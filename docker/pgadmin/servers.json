@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "SE Quiz PostgreSQL",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "se_quiz",
+      "Username": "se_quiz",
+      "SSLMode": "prefer"
+    }
+  }
+}

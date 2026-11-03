@@ -1,0 +1,26 @@
+{
+  "name": "se-open-quizer",
+  "version": "1.0.0",
+  "description": "Self-hosting [Fuiz](https://fuiz.org) using Docker with local source code extracted for direct development and customization.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SE-Final-Project/se-open-quizer.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/SE-Final-Project/se-open-quizer/issues"
+  },
+  "homepage": "https://github.com/SE-Final-Project/se-open-quizer#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^26.6.1"
+  }
+}

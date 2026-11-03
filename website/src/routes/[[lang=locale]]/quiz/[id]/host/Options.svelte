@@ -1,0 +1,420 @@
+<script lang="ts">
+	import { addIds, playIdlessConfig } from '$lib/clientOnly';
+	import ErrorMessage from '$lib/feedback/ErrorMessage.svelte';
+	import ErrorPage from '$lib/feedback/ErrorPage.svelte';
+	import Loading from '$lib/feedback/Loading.svelte';
+	import LoadingCircle from '$lib/feedback/LoadingCircle.svelte';
+	import { gameStartIssue } from '$lib/gameStartValidation';
+	import TypicalPage from '$lib/layout/TypicalPage.svelte';
+	import * as m from '$lib/paraglide/messages.js';
+	import { lintConfig } from '$lib/question-types/lint';
+	import { lintIssueTopbarMessage } from '$lib/question-types/lintMessages';
+	import { type CreationId, type Database, getCreation, loadDatabase } from '$lib/storage';
+	import { storageErrorMessage } from '$lib/storage/feedback';
+	import {
+		type GenericIdlessFuizConfig,
+		type GenericIdlessSlide,
+		getQuestionType,
+		type NameStyle,
+		type QuestionType
+	} from '$lib/types';
+	import FancyButton from '$lib/ui/FancyButton.svelte';
+	import SectionLabel from '$lib/ui/SectionLabel.svelte';
+	import Stepper from '$lib/ui/Stepper.svelte';
+	import Switch from '$lib/ui/Switch.svelte';
+	import CasinoOutline from '~icons/material-symbols/casino-outline';
+	import Gavel from '~icons/material-symbols/gavel';
+	import GroupsOutline from '~icons/material-symbols/groups-outline';
+	import LeaderboardOutline from '~icons/material-symbols/leaderboard-outline';
+	import PersonAddOutline from '~icons/material-symbols/person-add-outline';
+	import PhoneAndroidOutline from '~icons/material-symbols/phone-android-outline';
+	import ShortText from '~icons/material-symbols/short-text';
+	import Shuffle from '~icons/material-symbols/shuffle';
+	import SwapVert from '~icons/material-symbols/swap-vert';
+	import TheaterComedyOutline from '~icons/material-symbols/theater-comedy-outline';
+	import TimerOffOutline from '~icons/material-symbols/timer-off-outline';
+
+	let { id }: { id: CreationId } = $props();
+
+	let database: Database;
+	async function load() {
+		database = await loadDatabase();
+		return getCreation(id, database);
+	}
+	let loading = $state(false);
+
+	let errorMessage = $state('');
+
+	function validateStart<T>(config: GenericIdlessFuizConfig<T>): string | undefined {
+		const issue = gameStartIssue(config);
+		if (issue === 'missing_title' || issue === 'default_title') return m.game_start_rename_quiz();
+		if (issue === 'missing_question') return m.game_start_add_question();
+		return lintIssueTopbarMessage(lintConfig(addIds(config)));
+	}
+
+	let nameStyle = $state<NameStyle | null>(null),
+		questionsOnPlayersDevices = $state(false),
+		shuffleAnswers = $state(true),
+		shuffleSlides = $state(false),
+		leaderboard = $state(true),
+		teams = $state(false),
+		teamSize = $state(4),
+		assignRandom = $state(false),
+		censorNames = $state(true),
+		allowLateJoin = $state(true),
+		hostPaced = $state(false);
+
+	type StyleKey = 'Pet' | 'Roman';
+	const styleKinds: StyleKey[] = ['Pet', 'Roman'];
+
+	function styleLabel(k: StyleKey): string {
+		return k === 'Pet' ? m.petnames() : m.romannames();
+	}
+
+	function exampleFor(k: StyleKey, len: 2 | 3): string {
+		if (k === 'Pet') return len === 2 ? 'Swift Fox' : 'Quietly Swift Fox';
+		return len === 2 ? 'Marcus Aurelius' : 'Marcus Aurelius Cato';
+	}
+
+	// https://stackoverflow.com/a/2450976
+	function shuffleArray<T>(array: T[]): T[] {
+		let currentIndex = array.length;
+
+		// While there remain elements to shuffle.
+		while (currentIndex > 0) {
+			// Pick a remaining element.
+			const randomIndex = Math.floor(Math.random() * currentIndex);
+			currentIndex--;
+
+			// And swap it with the current element.
+			[array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+		}
+
+		return array;
+	}
+
+	function conditionalShuffleAnswer<T>(
+		slide: GenericIdlessSlide<T>,
+		shuffleAnswers: boolean
+	): GenericIdlessSlide<T> {
+		if (!shuffleAnswers) return slide;
+		// Only slides whose options are interchangeable get shuffled. A puzzle's
+		// order *is* its answer (the server shuffles what players see), and a
+		// type-answer's list is a set of accepted spellings, not choices.
+		return {
+			...slide,
+			...('MultipleChoice' in slide && {
+				MultipleChoice: {
+					...slide.MultipleChoice,
+					answers: shuffleArray(slide.MultipleChoice.answers)
+				}
+			}),
+			...('Poll' in slide && {
+				Poll: { ...slide.Poll, answers: shuffleArray(slide.Poll.answers) }
+			})
+		};
+	}
+
+	function shuffle<T>(
+		config: GenericIdlessFuizConfig<T>,
+		shuffleSlides: boolean,
+		shuffleAnswers: boolean
+	): GenericIdlessFuizConfig<T> {
+		return {
+			...config,
+			slides: (shuffleSlides ? shuffleArray(config.slides) : config.slides).map((slide) =>
+				conditionalShuffleAnswer(slide, shuffleAnswers)
+			)
+		};
+	}
+
+	/**
+	 * Every field across all slide types that closes an answering window (or, for
+	 * an info slide, moves the game on by itself). Nulling them is what "host
+	 * paced" means; `introduce_question` is left alone so the question still
+	 * reveals its answers on cue.
+	 */
+	const PACED_FIELDS = ['time_limit', 'idea_time_limit', 'vote_time_limit', 'duration'] as const;
+
+	// Host-paced: drop every answering time limit so the host advances manually.
+	function hostPace<T>(
+		config: GenericIdlessFuizConfig<T>,
+		hostPaced: boolean
+	): GenericIdlessFuizConfig<T> {
+		if (!hostPaced) return config;
+		return {
+			...config,
+			slides: config.slides.map((slide) => {
+				const kind = getQuestionType(slide);
+				const body: Record<string, unknown> = {
+					...(slide as unknown as Record<QuestionType, Record<string, unknown>>)[kind]
+				};
+				for (const field of PACED_FIELDS) {
+					if (field in body) body[field] = null;
+				}
+				return { [kind]: body } as GenericIdlessSlide<T>;
+			})
+		};
+	}
+</script>
+
+{#await load()}
+	<Loading />
+{:then fuiz}
+	{#if !fuiz}
+		<ErrorPage errorMessage={m.missing_fuiz()} />
+	{:else}
+		{@const validationMessage = validateStart(fuiz.config)}
+		<TypicalPage>
+			<form
+				onsubmit={async (e) => {
+					e.preventDefault();
+					if (validationMessage) return;
+					errorMessage = '';
+					loading = true;
+					try {
+					const fresh = await getCreation(id, database);
+					if (!fresh) { loading = false; errorMessage = m.missing_fuiz(); return; }
+					const freshError = validateStart(fresh.config);
+					if (freshError) { loading = false; errorMessage = freshError; return; }
+					await playIdlessConfig(
+						hostPace(shuffle(fresh.config, shuffleSlides, shuffleAnswers), hostPaced),
+						{
+							random_names: nameStyle,
+							show_answers: questionsOnPlayersDevices || teams,
+							no_leaderboard: !leaderboard,
+							lock_after_start: !allowLateJoin,
+							profanity: censorNames ? 'Censor' : 'Allow',
+							...(teams && { teams: { size: teamSize, assign_random: assignRandom } })
+						},
+						{ uniqueId: fresh.uniqueId, versionId: fresh.versionId }, database
+					).then((err) => {
+						loading = false;
+						if (err) {
+							errorMessage = err;
+						}
+					});
+					} catch (cause) { loading = false; errorMessage = storageErrorMessage(cause); }
+				}}
+			>
+				<h2>{m.options()}</h2>
+
+				<div class="section">
+					<SectionLabel --section-label-padding="0 0.3em">{m.section_players()}</SectionLabel>
+					<div class="card">
+						<Switch
+							id="random"
+							checked={false}
+							onchange={(checked) => {
+								if (checked) {
+									nameStyle = { Petname: 2 };
+								} else {
+									nameStyle = null;
+								}
+							}}
+						>
+							<TheaterComedyOutline height="1.2em" width="1.2em" />
+							{m.randomized_names()}
+						</Switch>
+						{#if nameStyle !== null}
+							{@const len = 'Roman' in nameStyle ? nameStyle.Roman : nameStyle.Petname}
+							{@const currentKind: StyleKey = 'Roman' in nameStyle ? 'Roman' : 'Pet'}
+							<div class="style-grid">
+								{#each styleKinds as k (k)}
+									<button
+										type="button"
+										class="style-card"
+										class:selected={currentKind === k}
+										onclick={() =>
+											(nameStyle = k === 'Roman' ? { Roman: len } : { Petname: len })}
+									>
+										<div class="style-title">{styleLabel(k)}</div>
+										<div class="style-hint">{exampleFor(k, len)}</div>
+									</button>
+								{/each}
+							</div>
+							<Stepper
+								value={len}
+								onchange={(v) => {
+									if (nameStyle !== null && (v === 2 || v === 3))
+										nameStyle = 'Roman' in nameStyle ? { Roman: v } : { Petname: v };
+								}}
+								min={2}
+								max={3}
+							>
+								<ShortText height="1.2em" width="1.2em" />
+								{m.random_name_length()}
+							</Stepper>
+						{/if}
+						<Switch id="censor" bind:checked={censorNames}>
+							<Gavel height="1.2em" width="1.2em" />
+							{m.censor_names()}
+						</Switch>
+						<Switch id="allow-late-join" bind:checked={allowLateJoin}>
+							{m.allow_joining_mid_game()}
+						</Switch>
+					</div>
+				</div>
+
+				<div class="section">
+					<SectionLabel --section-label-padding="0 0.3em">{m.section_teams()}</SectionLabel>
+					<div class="card">
+						<Switch id="teams" bind:checked={teams}>
+							<GroupsOutline height="1.2em" width="1.2em" />
+							{m.teams()}
+						</Switch>
+						{#if teams}
+							<Stepper bind:value={teamSize} min={2} max={5}>
+								<PersonAddOutline height="1.2em" width="1.2em" />
+								{m.optimal_team_size()}
+							</Stepper>
+							<Switch id="assign_random" bind:checked={assignRandom}>
+								<CasinoOutline height="1.2em" width="1.2em" />
+								{m.assign_random()}
+							</Switch>
+						{/if}
+					</div>
+				</div>
+
+				<div class="section">
+					<SectionLabel --section-label-padding="0 0.3em">{m.section_display()}</SectionLabel>
+					<div class="card">
+						<Switch
+							id="players"
+							bind:checked={questionsOnPlayersDevices}
+							stuck={teams ? true : undefined}
+						>
+							<PhoneAndroidOutline height="1.2em" width="1.2em" />
+							{m.questions_on_players_devices()}
+						</Switch>
+						<Switch id="leaderboard" bind:checked={leaderboard}>
+							<LeaderboardOutline height="1.2em" width="1.2em" />
+							{m.leaderboard()}
+						</Switch>
+						<Switch id="unlimited_time" bind:checked={hostPaced}>
+							<TimerOffOutline height="1.2em" width="1.2em" />
+							{m.unlimited_time()}
+						</Switch>
+					</div>
+				</div>
+
+				<div class="section">
+					<SectionLabel --section-label-padding="0 0.3em">{m.section_randomization()}</SectionLabel>
+					<div class="card">
+						<Switch id="shuffle_slides" bind:checked={shuffleSlides}>
+							<Shuffle height="1.2em" width="1.2em" />
+							{m.shuffle_slides()}
+						</Switch>
+						<Switch id="shuffle_answers" bind:checked={shuffleAnswers}>
+							<SwapVert height="1.2em" width="1.2em" />
+							{m.shuffle_answers()}
+						</Switch>
+					</div>
+				</div>
+
+				<ErrorMessage errorMessage={validationMessage ?? errorMessage} />
+				<div class="start-row">
+					<FancyButton disabled={loading || validationMessage !== undefined}>
+						<div id="button">
+							{#if loading}
+								<div class="spinner">
+									<LoadingCircle borderWidth={3} />
+								</div>
+							{/if}
+							{m.start()}
+						</div>
+					</FancyButton>
+				</div>
+			</form>
+		</TypicalPage>
+	{/if}
+{:catch cause}<p role="alert">{storageErrorMessage(cause)}</p>{/await}
+
+<style>
+	form {
+		display: flex;
+		flex-direction: column;
+		max-width: min(36ch, 90vw);
+		gap: 1em;
+		padding: 0.5em;
+		box-sizing: border-box;
+		margin: 0 auto;
+	}
+
+	h2 {
+		margin: 0;
+		text-align: center;
+	}
+
+	.section {
+		display: flex;
+		flex-direction: column;
+		gap: 0.2em;
+	}
+
+	.card {
+		display: flex;
+		flex-direction: column;
+		gap: 0.6em;
+		border: 1px solid var(--outline);
+		border-radius: 0.7em;
+		background: var(--surface);
+		padding: 0.6em 0.7em;
+	}
+
+	.start-row {
+		display: flex;
+		justify-content: center;
+	}
+
+	#button {
+		padding: 0.1em 0.5em;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 0.5em;
+		font-family: var(--alternative-font);
+	}
+
+	.spinner {
+		height: 1em;
+		width: 1em;
+	}
+
+	.style-grid {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.5em;
+	}
+
+	.style-card {
+		appearance: none;
+		font: inherit;
+		color: inherit;
+		text-align: start;
+		cursor: pointer;
+		padding: 0.6em 0.7em;
+		border: 1px solid var(--outline);
+		border-radius: 0.6em;
+		background: var(--surface);
+		transition: border-color 150ms, background 150ms;
+	}
+
+	.style-card.selected {
+		border-color: var(--primary);
+		background: color-mix(in srgb, var(--primary) 8%, var(--surface));
+	}
+
+	.style-title {
+		font-family: var(--alternative-font);
+		font-weight: 800;
+		font-size: 1em;
+	}
+
+	.style-hint {
+		font-size: 0.75em;
+		opacity: 0.5;
+		font-style: italic;
+		margin-top: 0.15em;
+	}
+</style>

@@ -1,0 +1,31 @@
+[package]
+name = "fuiz-cloudflare"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors = ["Khaleel Al-Adhami <khaleel.aladhami@gmail.com>"]
+
+
+[lints]
+workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+worker = { version = "0.8", features = ['http'] }
+worker-macros = { version = "0.8", features = ['http'] }
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["serde_derive", "derive", "alloc"] }
+serde_json = "1.0"
+garde = { version = "0.23", features = ["derive"] }
+fuiz = { path = "../logic", features = ["serializable"] }
+serde_bytes = "0.11"
+ciborium = "0.2"
+rustc-hash = "2"          # FxHashSet, matching the set type the logic crate hands back
+serde-wasm-bindgen = "0.6" # Decoding the values a storage listing returns
+
+base64 = "0.22"
+hmac = "0.12"
+sha2 = "0.10"
+futures-util = "0.3"

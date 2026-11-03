@@ -1,0 +1,70 @@
+# Isolated, public synthetic credentials and temporary data only. Never load the application .env.
+services:
+  postgres:
+    image: postgres:17-alpine
+    tmpfs: [/var/lib/postgresql/data]
+    environment:
+      POSTGRES_USER: llmfixture
+      POSTGRES_PASSWORD: disposable-llm-fixture
+      POSTGRES_DB: llmfixture
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U llmfixture -d llmfixture']
+      interval: 2s
+      retries: 20
+  web:
+    image: seopen-llm-web-test
+    build:
+      context: ..
+      args:
+        BASE_PATH: ''
+    ports: ['127.0.0.1:9398:3000', '127.0.0.1:11435:11434']
+    tmpfs: [/data/storage]
+    volumes:
+      - ./llmMockProvider.ts:/fixture/provider.ts:ro
+    command: [sh, -c, 'bun /fixture/provider.ts & bun run db:setup && exec bun /app/build/index.js']
+    environment:
+      PORT: '3000'
+      ORIGIN: http://127.0.0.1:9398
+      DATABASE_URL: postgres://llmfixture:disposable-llm-fixture@postgres:5432/llmfixture
+      DB_PROVIDER: postgres
+      KV_PROVIDER: postgres
+      STORAGE_PROVIDER: filesystem
+      STORAGE_PATH: /data/storage
+      ADMIN_SEED_EMAIL: admin@llm.fixture
+      ADMIN_SEED_PASSWORD: disposable-llm-admin-password
+      ADMIN_SESSION_SECRET: disposable-llm-session-secret
+      PUBLIC_SELF_HOSTED: 'true'
+      PUBLIC_PLAY_URL: http://127.0.0.1:9398
+      PUBLIC_DISPLAY_PLAY_URL: 127.0.0.1:9398
+      PUBLIC_BACKEND_URL: http://127.0.0.1:9898
+      PUBLIC_WS_URL: ws://127.0.0.1:9898
+      PUBLIC_CORKBOARD_URL: http://127.0.0.1:9598
+      CORKBOARD_INTERNAL_URL: http://corkboard:5040
+      GAME_SERVER_INTERNAL_URL: http://game:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+  game:
+    image: seopen-llm-game-test
+    build:
+      context: ../../game-backend
+      target: fuiz-server
+    ports: ['127.0.0.1:9898:8080']
+    environment:
+      FUIZ_HOSTNAME: 0.0.0.0
+      FUIZ_PORT: '8080'
+      FUIZ_ALLOWED_ORIGINS: '["http://127.0.0.1:9398"]'
+      ADMIN_SESSION_SECRET: disposable-llm-session-secret
+      HOST_AUTHORIZATION_URL: http://web:3000/api/host/authorize
+  corkboard:
+    image: seopen-llm-corkboard-test
+    build:
+      context: ../../game-backend
+      target: corkboard-server
+    ports: ['127.0.0.1:9598:5040']
+    tmpfs: [/data]
+    environment:
+      CORKBOARD_HOSTNAME: 0.0.0.0
+      CORKBOARD_PORT: '5040'
+      CORKBOARD_STORAGE_DIR: /data
+      CORKBOARD_ALLOWED_ORIGINS: '["http://127.0.0.1:9398"]'

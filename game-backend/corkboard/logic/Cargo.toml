@@ -1,0 +1,21 @@
+[package]
+name = "corkboard"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+image = { git = "https://github.com/image-rs/image.git", branch="main", default-features = false, features = [
+    "avif",
+    "gif",
+    "hdr",
+    "jpeg",
+    "png",
+    "tiff",
+    "webp",
+] }
+png = "0.18.1"
+num-integer = "0.1.46"

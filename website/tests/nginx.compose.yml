@@ -1,0 +1,107 @@
+# Disposable prefix acceptance only. Public synthetic credentials; never loads the application .env.
+# Only Nginx is exposed, on loopback. All data is temporary and no named volumes are used.
+services:
+  nginx:
+    image: nginx:stable-alpine
+    ports: ['127.0.0.1:9399:80']
+    environment:
+      BASE_PATH: ${BASE_PATH:-/SEQuiz}
+      NGINX_ENVSUBST_FILTER: '^BASE_PATH$'
+    entrypoint: [/bin/sh, /sequiz-entrypoint.sh]
+    command: [nginx, -g, 'daemon off;']
+    volumes:
+      - ../../docker/nginx/default.conf:/etc/nginx/templates/default.conf.template:ro
+      - ../../docker/nginx/entrypoint.sh:/sequiz-entrypoint.sh:ro
+    depends_on:
+      web:
+        condition: service_healthy
+      game-server:
+        condition: service_started
+      corkboard:
+        condition: service_started
+      pgadmin:
+        condition: service_healthy
+  pgadmin:
+    image: dpage/pgadmin4
+    tmpfs: [/var/lib/pgadmin]
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@nginx.fixture
+      PGADMIN_DEFAULT_PASSWORD: disposable-nginx-pgadmin-password
+      PGADMIN_DISABLE_POSTFIX: '1'
+    healthcheck:
+      test: [CMD, /venv/bin/python, '-c', "import urllib.request; urllib.request.urlopen('http://127.0.0.1:80/misc/ping', timeout=3)"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  postgres:
+    image: postgres:17-alpine
+    tmpfs: [/var/lib/postgresql/data]
+    environment:
+      POSTGRES_USER: nginxfixture
+      POSTGRES_PASSWORD: disposable-nginx-database
+      POSTGRES_DB: nginxfixture
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U nginxfixture -d nginxfixture']
+      interval: 2s
+      timeout: 2s
+      retries: 20
+  web:
+    image: seopen-nginx-web-acceptance
+    build:
+      context: ..
+      args:
+        BASE_PATH: ${BASE_PATH:-/SEQuiz}
+    tmpfs: [/data/storage]
+    environment:
+      PORT: '3000'
+      ADDRESS_HEADER: X-Forwarded-For
+      XFF_DEPTH: '1'
+      BODY_SIZE_LIMIT: 32M
+      ORIGIN: http://127.0.0.1:9399
+      DATABASE_URL: postgres://nginxfixture:disposable-nginx-database@postgres:5432/nginxfixture
+      DB_PROVIDER: postgres
+      KV_PROVIDER: postgres
+      STORAGE_PROVIDER: filesystem
+      STORAGE_PATH: /data/storage
+      ADMIN_SEED_EMAIL: admin@nginx.fixture
+      ADMIN_SEED_PASSWORD: disposable-nginx-admin-password
+      ADMIN_SESSION_SECRET: disposable-nginx-session-secret
+      SEED_DEMO_GAMES: 'false'
+      GAME_SERVER_INTERNAL_URL: http://game-server:8080
+      CORKBOARD_INTERNAL_URL: http://corkboard:5040
+      PUBLIC_PLAY_URL: http://127.0.0.1:9399
+      PUBLIC_DISPLAY_PLAY_URL: 127.0.0.1:9399${BASE_PATH:-/SEQuiz}
+      PUBLIC_BACKEND_URL: http://127.0.0.1:9399${BASE_PATH:-/SEQuiz}/backend
+      PUBLIC_WS_URL: ws://127.0.0.1:9399${BASE_PATH:-/SEQuiz}/backend
+      PUBLIC_CORKBOARD_URL: http://127.0.0.1:9399${BASE_PATH:-/SEQuiz}/media
+      PUBLIC_SELF_HOSTED: 'true'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, bun, '-e', "const r=await fetch('http://127.0.0.1:3000${BASE_PATH:-/SEQuiz}/');if(!r.ok)process.exit(1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+  game-server:
+    image: seopen-nginx-game-acceptance
+    build:
+      context: ../../game-backend
+      target: fuiz-server
+    environment:
+      FUIZ_HOSTNAME: 0.0.0.0
+      FUIZ_PORT: '8080'
+      FUIZ_ALLOWED_ORIGINS: '["http://127.0.0.1:9399"]'
+      ADMIN_SESSION_SECRET: disposable-nginx-session-secret
+      HOST_AUTHORIZATION_URL: http://web:3000${BASE_PATH:-/SEQuiz}/api/host/authorize
+  corkboard:
+    image: seopen-nginx-corkboard-acceptance
+    build:
+      context: ../../game-backend
+      target: corkboard-server
+    tmpfs: [/data]
+    environment:
+      CORKBOARD_HOSTNAME: 0.0.0.0
+      CORKBOARD_PORT: '5040'
+      CORKBOARD_STORAGE_DIR: /data
+      CORKBOARD_ALLOWED_ORIGINS: '["http://127.0.0.1:9399"]'

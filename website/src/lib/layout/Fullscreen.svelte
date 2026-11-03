@@ -1,0 +1,35 @@
+<script lang="ts">
+	import { onMount } from 'svelte';
+	import * as m from '$lib/paraglide/messages.js';
+	import IconButton from '$lib/ui/IconButton.svelte';
+	import CloseFullscreen from '~icons/material-symbols/close-fullscreen';
+	import OpenInFull from '~icons/material-symbols/open-in-full';
+
+	let fullscreen = $state(false);
+
+	let { fullscreenElement = undefined }: { fullscreenElement?: HTMLElement } = $props();
+
+	onMount(() => {
+		document.addEventListener('fullscreenchange', () => {
+			fullscreen = document.fullscreenElement !== null;
+		});
+
+		fullscreen = document.fullscreenElement !== null;
+	});
+
+	async function toggle() {
+		if (fullscreen) {
+			await document.exitFullscreen();
+		} else {
+			await (fullscreenElement || document.documentElement).requestFullscreen();
+		}
+	}
+</script>
+
+<IconButton onclick={toggle} alt={fullscreen ? m.exit_fullscreen() : m.enter_fullscreen()}>
+	{#if fullscreen}
+		<CloseFullscreen />
+	{:else}
+		<OpenInFull />
+	{/if}
+</IconButton>

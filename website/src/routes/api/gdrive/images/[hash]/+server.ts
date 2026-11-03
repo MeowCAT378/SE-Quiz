@@ -1,0 +1,5 @@
+import { managedDriveRoute } from '../../managedRoutes';
+import type { RequestHandler } from './$types';
+export const GET: RequestHandler = (event) => managedDriveRoute(event, 'image', event.params.hash);
+export const POST = GET;
+export const HEAD = GET;

@@ -1,2 +1,2 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+docker/nginx/entrypoint.sh text eol=lf
+generate_config.sh text eol=lf

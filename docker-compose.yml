@@ -1,0 +1,132 @@
+services:
+  nginx:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-80}:80"
+    environment:
+      BASE_PATH: ${BASE_PATH:-/SEQuiz}
+      NGINX_ENVSUBST_FILTER: '^BASE_PATH$'
+    entrypoint: ["/bin/sh", "/sequiz-entrypoint.sh"]
+    command: ["nginx", "-g", "daemon off;"]
+    volumes:
+      - ./docker/nginx/default.conf:/etc/nginx/templates/default.conf.template:ro
+      - ./docker/nginx/entrypoint.sh:/sequiz-entrypoint.sh:ro
+    depends_on:
+      web:
+        condition: service_healthy
+      game-server:
+        condition: service_started
+      corkboard:
+        condition: service_started
+      pgadmin:
+        condition: service_started
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - postgres-data-v2:/var/lib/postgresql/data
+    networks:
+      - database
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  pgadmin:
+    image: dpage/pgadmin4
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${SEOPEN_PGADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${SEOPEN_PGADMIN_PASSWORD}
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - default
+      - database
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # SvelteKit frontend
+  web:
+    build:
+      context: ./website
+      dockerfile: Dockerfile
+      args:
+        BASE_PATH: ${BASE_PATH:-/SEQuiz}
+    image: se-quiz-web:local
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - PORT=3000
+      - ADDRESS_HEADER=X-Forwarded-For
+      - XFF_DEPTH=1
+      - BODY_SIZE_LIMIT=32M
+      - DB_PROVIDER=postgres
+      - KV_PROVIDER=postgres
+      - STORAGE_PROVIDER=filesystem
+      - STORAGE_PATH=/data/storage
+      - CORKBOARD_INTERNAL_URL=http://corkboard:5040
+      - GAME_SERVER_INTERNAL_URL=http://game-server:8080
+    volumes:
+      - web-data:/data/storage
+    networks:
+      - default
+      - database
+    depends_on:
+      postgres:
+        condition: service_healthy
+      game-server:
+        condition: service_started
+      corkboard:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "bun", "-e", "const r=await fetch('http://127.0.0.1:3000${BASE_PATH:-/SEQuiz}/');if(!r.ok)process.exit(1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # Game server (actix-web)
+  game-server:
+    build:
+      context: ./game-backend
+      dockerfile: Dockerfile
+      target: fuiz-server
+    image: se-quiz-server:local
+    restart: unless-stopped
+    environment:
+      - FUIZ_ALLOWED_ORIGINS=${FUIZ_ALLOWED_ORIGINS}
+      - FUIZ_HOSTNAME=0.0.0.0
+      - FUIZ_PORT=8080
+      - ADMIN_SESSION_SECRET=${ADMIN_SESSION_SECRET}
+      - HOST_AUTHORIZATION_URL=http://web:3000${BASE_PATH:-/SEQuiz}/api/host/authorize
+
+  # Image storage server (actix-web)
+  corkboard:
+    build:
+      context: ./game-backend
+      dockerfile: Dockerfile
+      target: corkboard-server
+    image: se-quiz-corkboard:local
+    restart: unless-stopped
+    environment:
+      - CORKBOARD_ALLOWED_ORIGINS=${CORKBOARD_ALLOWED_ORIGINS}
+      - CORKBOARD_HOSTNAME=0.0.0.0
+      - CORKBOARD_PORT=5040
+      - CORKBOARD_STORAGE_DIR=/data
+    volumes:
+      - corkboard-data:/data
+
+volumes:
+  postgres-data-v2:
+  pgadmin_data:
+  corkboard-data:
+  web-data:
+
+networks:
+  database:
+    internal: true

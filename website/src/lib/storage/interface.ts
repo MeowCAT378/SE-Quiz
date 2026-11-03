@@ -1,0 +1,58 @@
+import type { Base64Media } from '../types';
+import type {
+	CreationId,
+	InternalFuiz,
+	InternalFuizMetadata,
+	InternalReport,
+	MediaReferencedFuizConfig,
+	ReportBody,
+	ReportId
+} from '.';
+import type { AccountBinding } from './account';
+
+export interface RemoteSyncProviderStatus {
+	authenticated: boolean;
+	available: boolean;
+}
+
+export interface RemoteSyncProvider {
+	// Static metadata
+	readonly name: string;
+	readonly displayName: string;
+
+	// Static authentication methods
+	status(): Promise<RemoteSyncProviderStatus>;
+	login(returnUrl?: string): void;
+
+	// Constructor creates instances with these instance methods
+	new (
+		binding: AccountBinding
+	): {
+		readonly name: string;
+		readonly displayName: string;
+
+		// Instance methods
+		logout(): Promise<void>;
+		sync(
+			localDatabase: IDBDatabase,
+			creations: [CreationId, InternalFuizMetadata][]
+		): Promise<void>;
+		create(uuid: string, internalFuiz: InternalFuiz): Promise<void>;
+		get(uuid: string): Promise<MediaReferencedFuizConfig | undefined>;
+		update(uuid: string, internalFuiz: InternalFuiz): Promise<void>;
+		delete(uuid: string): Promise<void>;
+		createImage(hash: string, value: Base64Media): Promise<void>;
+		getImage(hash: string): Promise<Base64Media | undefined>;
+
+		syncReports(
+			localDatabase: IDBDatabase,
+			reports: [ReportId, InternalFuizMetadata][]
+		): Promise<void>;
+		createReport(uuid: string, report: InternalReport): Promise<void>;
+		getReport(uuid: string): Promise<ReportBody | undefined>;
+		updateReport(uuid: string, report: InternalReport): Promise<void>;
+		deleteReport(uuid: string): Promise<void>;
+	};
+}
+
+export type RemoteSync = InstanceType<RemoteSyncProvider>;
