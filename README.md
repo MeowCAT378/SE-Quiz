@@ -29,7 +29,7 @@ SE Quiz is a self-hosted classroom quiz and live activity platform derived from 
 For a new checkout:
 
 ```bash
-git clone https://github.com/SE-Final-Project/se-open-quizer.git
+git clone https://github.com/MeowCAT378/SE-Quiz.git
 cd se-open-quizer
 cp .env.example .env
 ```
